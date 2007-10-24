@@ -1,0 +1,2 @@
+Main-Class: Steerer
+Class-Path: lib/
