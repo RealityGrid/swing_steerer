@@ -31,8 +31,11 @@
 ---------------------------------------------------------------------------- */
 
 import java.awt.event.ActionEvent;
+import java.awt.event.ItemEvent;
+import java.awt.event.ItemListener;
 
 import javax.swing.AbstractAction;
+import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JTextField;
@@ -106,7 +109,15 @@ public abstract class SteererParameter {
   }
 
   public static SteererParameter createReadWrite(SteererPanel steerer, int handle, Object value, String label, String min, String max) {
-    ReadWrite sp = new ReadWrite(steerer, handle, value, label);
+
+    SteererParameter sp;
+
+    if(min.equals("0") && max.equals("1")) {
+      sp = new BoolParameter(steerer, handle, value, label, min, max);
+    }
+    else {
+      sp = new ReadWrite(steerer, handle, value, label, min, max);  
+    }
 
     return sp;
   }
@@ -121,11 +132,22 @@ class ReadOnly extends SteererParameter {
 
 class ReadWrite extends SteererParameter {
 
-  public ReadWrite(SteererPanel steerer, int handle, Object value, String label) {
-    super(steerer, handle, value, label, true, "", "");
+  public ReadWrite(SteererPanel steerer, int handle, Object value, String label, String min, String max) {
+    super(steerer, handle, value, label, true, min, max);
     JTextField e = new JTextField();
     e.addActionListener(new ParamChangeAction(this));
+    e.setToolTipText(createTooltip(min, max));
     editor = e;
+  }
+
+  protected String createTooltip(String min, String max) {
+    StringBuilder result = new StringBuilder();
+
+    if(!min.equals("--")) result.append(min + " <= ");
+    result.append("x");
+    if(!max.equals("--")) result.append(" <= " + max);
+
+    return result.toString();
   }
 
   class ParamChangeAction extends AbstractAction {
@@ -138,6 +160,30 @@ class ReadWrite extends SteererParameter {
     public void actionPerformed(ActionEvent e) {
       param.steerValue(((JTextField) param.editor).getText());
       ((JTextField) param.editor).setText("");
+    }
+  }
+}
+
+class BoolParameter extends ReadWrite {
+  
+  public BoolParameter(SteererPanel steerer, int handle, Object value, String label, String min, String max) {
+    super(steerer, handle, value, label, min, max);
+
+    JCheckBox cb = new JCheckBox();
+    cb.addItemListener(new ParamChangeAction(this));
+    cb.setToolTipText(createTooltip(min, max));
+    editor = cb;
+  }
+
+  class ParamChangeAction implements ItemListener {
+    BoolParameter param;
+
+    protected ParamChangeAction(BoolParameter param) {
+      this.param = param;
+    }
+
+    public void itemStateChanged(ItemEvent e) {
+      
     }
   }
 }
