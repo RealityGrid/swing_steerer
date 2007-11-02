@@ -35,7 +35,6 @@ jar: classes
 	rm -rf build
 
 classes:
-	-ln -s ${LIBPATH} lib
 	-mkdir build
 	javac -cp ${LIBPATH} -sourcepath src -d build src/*.java
 
