@@ -124,11 +124,13 @@ public class SteererPanel extends JPanel {
 	    steerer.emitResume(simHandle);
 	    paused = false;
 	    pause.setText(steerer.getString("Panels.pause_button"));
+	    pause.setToolTipText(steerer.getString("Panels.pause_tip"));
 	  }
 	  else {
 	    steerer.emitPause(simHandle);
 	    paused = true;
 	    pause.setText(steerer.getString("Panels.resume_button"));
+	    pause.setToolTipText(steerer.getString("Panels.resume_tip"));
 	  }
 	}
       };
@@ -156,10 +158,14 @@ public class SteererPanel extends JPanel {
     // create and add buttons panel
     JPanel buttonPanel = new JPanel();
     pause = (JButton) buttonPanel.add(new JButton(pa));
+    pause.setToolTipText(steerer.getString("Panels.pause_tip"));
     stop = (JButton) buttonPanel.add(new JButton(sa));
+    stop.setToolTipText(steerer.getString("Panels.stop_tip"));
     detach = (JButton) buttonPanel.add(new JButton(da));
+    detach.setToolTipText(steerer.getString("Panels.detach_tip"));
     close = (JButton) buttonPanel.add(new JButton(ca));
     close.setEnabled(false);
+    close.setToolTipText(steerer.getString("Panels.close_tip"));
     add(buttonPanel, BorderLayout.NORTH);
 
     // create and add tabs
