@@ -74,7 +74,10 @@ import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JPasswordField;
+import javax.swing.JSlider;
 import javax.swing.JTabbedPane;
+import javax.swing.SpringLayout;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
@@ -245,16 +248,23 @@ public class Steerer extends JPanel implements ReG_SteerConstants {
     } 
   }
 
-  public synchronized void addPanel(int handle, SteererPanel sp) {
+  public synchronized void addPanel(int handle, SteererPanel sp, String title) {
     panels.put(handle, sp);
 
     if(numPanels == 0) {
+      remove(logo);
       add(tabs, BorderLayout.CENTER);
-      startTimer(1000);
+      startTimer(500);
     }
-    tabs.addTab("APP", null, sp);
+
+    if(title == null) title = "Simulation " + numPanels;
+    tabs.addTab(title, null, sp);
 
     numPanels++;
+  }
+
+  public synchronized void addPanel(int handle, SteererPanel sp) {
+    addPanel(handle, sp , null);
   }
 
   public synchronized SteererPanel removePanel(int handle) {
@@ -315,20 +325,30 @@ public class Steerer extends JPanel implements ReG_SteerConstants {
   }
 
   private void startTimer(int millis) {
-    if(timer != null) {
-      if(timer.isRunning())
+    if(timer != null && timer.isRunning())
 	stopTimer();
-    }
 
     timer = new Timer(millis, createSteererUpdateAction());
     timer.start();
   }
 
   private void stopTimer() {
-    if(timer != null) {
+    if(timer != null && timer.isRunning()) {
       timer.stop();
       timer = null;
     }
+  }
+
+  public void setTimerDelay(int millis) {
+    if(timer != null && timer.isRunning())
+      timer.setDelay(millis);
+  }
+
+  public int getTimerDelay() {
+    if(timer != null && timer.isRunning())
+      return timer.getDelay();
+    else
+      return 0;
   }
 
   public void tryAttach(String sws, boolean remote) {
@@ -338,9 +358,9 @@ public class Steerer extends JPanel implements ReG_SteerConstants {
     if(remote) {
       if(sws == null) {
 	// query registry
-	getRegistry();
-	setSecurity();
-	getSWS();
+	String reg = getRegistry();
+	if(reg == null) return;
+	if((sws = getSWS()) == null) return;
       }
 
       try {
@@ -375,51 +395,86 @@ public class Steerer extends JPanel implements ReG_SteerConstants {
    ***************************************************/
 
   public String getRegistry() {
-    if(registry == null) {
-      registry = JOptionPane.showInputDialog(this, "Registry address:", "Input...", JOptionPane.QUESTION_MESSAGE);
-    }
+    String reg = (String) JOptionPane.showInputDialog(this, "Registry address:", "Input...", JOptionPane.QUESTION_MESSAGE, null, null, registry);
 
-    return registry;
+    if(reg == null || reg.equals("")) reg = null;
+    if(reg != null) registry = reg;
+
+    return reg;
   }
 
-  public void setSecurity() {
-    if(registry.startsWith("https")) {
+  public String getSWS(String reg) {
+    String sws = null;
+    ReG_SteerRegistryEntry[] swsList;
+    String password;
+    String prompt;
+
+    // check registry isn't null
+    if(reg == null) reg = registry;
+
+    // set SSL params
+    if(reg.startsWith("https")) {
       // SSL
       regSec.setUsingSSL(true);
+      prompt = "Please enter your certificate password:";
     }
     else {
       // no SSL
       regSec.setUsingSSL(false);
-      regSec.setPassphrase("onone456");
+      prompt = "Please enter the Registry password:";
     }
-  }
+    
+    // get password for registry
+    password = getPassword(prompt);
+    if(password != null) {
+      regSec.setPassphrase(password);
+      password = null;
 
-  public String getSWS() {
-    String sws = null;
-    ReG_SteerRegistryEntry[] swsList;
-
-    synchronized(rssLock) {
-      swsList = rss.getRegistryEntriesFilteredSecure(registry, regSec, "SWS");
-    }
-
-    for(ReG_SteerRegistryEntry r : swsList) {
-
+      synchronized(rssLock) {
+	swsList = rss.getRegistryEntriesFilteredSecure(registry, regSec, "SWS");
+      }
+      
+      // present SWS choices
+      if(swsList != null && swsList.length != 0) {
+	if(swsList.length == 1)
+	  sws = swsList[0].getGSH();
+	else {
+	  ReG_SteerRegistryEntry swsC = (ReG_SteerRegistryEntry) JOptionPane.showInputDialog(this, "Please select an SWS:", "SWS", JOptionPane.QUESTION_MESSAGE, null, swsList, null);
+	  if(swsC != null)
+	    sws = swsC.getGSH();
+	}
+      }
+      else {
+	JOptionPane.showMessageDialog(this, "No SWS was returned.\nEither you do not have access to any SWSs in the registry\nor the password you supplied for the registry was incorrect.", "Error!", JOptionPane.ERROR_MESSAGE);
+      }
     }
 
     return sws;
   }
 
+  public String getSWS() {
+    return getSWS(null);
+  }
+
   public int attach(String sws) {
-    int result;
+    int result = REG_SIM_HANDLE_NOTSET;
 
     if(sws == "") {
+      // local attach
       synchronized(rssLock) {
 	result = rss.simAttach("");
       }
     }
     else {
-      synchronized(rssLock) {
-	result = rss.simAttachSecure(sws, regSec);
+      // remote attach
+      String password = getPassword("Enter password for this SWS:");
+      if(password != null) {
+	regSec.setPassphrase(password);
+	password = null;
+
+	synchronized(rssLock) {
+	  result = rss.simAttachSecure(sws, regSec);
+	}
       }
     }
 
@@ -619,75 +674,19 @@ public class Steerer extends JPanel implements ReG_SteerConstants {
 
   /***************************************************
    *
-   * Various builder methods (menus, panels, etc)
-   *
-   ***************************************************/
-
-  private JFrame createFrame(GraphicsConfiguration gc) {
-    frame = new JFrame(gc);
-    frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-
-    WindowListener wl = new WindowAdapter() {
-	public void windowClosing(WindowEvent e) {
-	  cleanExit();
-	}
-      };
-    frame.addWindowListener(wl);
-
-    return frame;
-  }
-
-  private JMenuBar createMenus() {
-    // create menubar
-    JMenuBar mb = new JMenuBar();
-    mb.getAccessibleContext().setAccessibleName(getString("MenuBar.access_desc"));
-
-    // file menu
-    JMenu file = (JMenu) mb.add(new JMenu(getString("FileMenu.label")));
-    file.setMnemonic(getMnemonic("FileMenu.mnemonic"));
-    file.getAccessibleContext().setAccessibleDescription(getString("FileMenu.access_desc"));
-
-    createMenuItem(file, "FileMenu.la", new AttachAction(this, false), true);
-    createMenuItem(file, "FileMenu.ga", new AttachAction(this, true), true);
-    createMenuItem(file, "FileMenu.spi", null, false);
-    createMenuItem(file, "FileMenu.api", null, false);
-
-    if(!isApplet()) {
-      file.addSeparator();
-      createMenuItem(file, "FileMenu.e", new ExitAction(this), true);
-    }
-
-    // help menu
-    JMenu help = (JMenu) mb.add(new JMenu(getString("HelpMenu.label")));
-    help.setMnemonic(getMnemonic("HelpMenu.mnemonic"));
-    help.getAccessibleContext().setAccessibleDescription(getString("HelpMenu.access_desc"));
-
-    createMenuItem(help, "HelpMenu.a", new AboutAction(this), true);
-
-    return mb;
-  }
-
-  private JMenuItem createMenuItem(JMenu menu, String prefix, Action action, boolean enabled) {
-    JMenuItem mi = (JMenuItem) menu.add(new JMenuItem(getString(prefix + "_label")));
-    mi.setMnemonic(getMnemonic(prefix + "_mnemonic"));
-    mi.getAccessibleContext().setAccessibleDescription(getString(prefix + "_access_desc"));
-
-    mi.addActionListener(action);
-    mi.setEnabled(enabled);
-
-    return mi;
-  }
-
-  public ImageIcon createImageIcon(String filename, String description) {
-    String path = "/resources/images/" + filename;
-    return new ImageIcon(getClass().getResource(path), description); 
-  }
-  
-  /***************************************************
-   *
    * Util methods
    *
    ***************************************************/
+
+  private String getPassword(String prompt) {
+    PasswordPanel panel = new PasswordPanel(this, prompt);
+    int ok =  JOptionPane.showConfirmDialog(this, panel, "Enter password:", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+
+    if(ok == JOptionPane.OK_OPTION)
+      return panel.getPassword();
+    else
+      return null;
+  }
 
   public boolean isApplet() {
     return (applet != null);
@@ -726,9 +725,127 @@ public class Steerer extends JPanel implements ReG_SteerConstants {
 
   /***************************************************
    *
+   * Various builder methods (menus, panels, etc)
+   *
+   ***************************************************/
+
+  private JFrame createFrame(GraphicsConfiguration gc) {
+    frame = new JFrame(gc);
+    frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+
+    WindowListener wl = new WindowAdapter() {
+	public void windowClosing(WindowEvent e) {
+	  cleanExit();
+	}
+      };
+    frame.addWindowListener(wl);
+
+    return frame;
+  }
+
+  private JMenuBar createMenus() {
+    // create menubar
+    JMenuBar mb = new JMenuBar();
+    mb.getAccessibleContext().setAccessibleName(getString("MenuBar.access_desc"));
+
+    // file menu
+    JMenu file = (JMenu) mb.add(new JMenu(getString("FileMenu.label")));
+    file.setMnemonic(getMnemonic("FileMenu.mnemonic"));
+    file.getAccessibleContext().setAccessibleDescription(getString("FileMenu.access_desc"));
+
+    createMenuItem(file, "FileMenu.la", new AttachAction(this, false));
+    createMenuItem(file, "FileMenu.ga", new AttachAction(this, true));
+    createMenuItem(file, "FileMenu.spi", new SteeringIntervalAction(this));
+    createMenuItem(file, "FileMenu.api", null);
+
+    if(!isApplet()) {
+      file.addSeparator();
+      createMenuItem(file, "FileMenu.e", new ExitAction(this));
+    }
+
+    // help menu
+    JMenu help = (JMenu) mb.add(new JMenu(getString("HelpMenu.label")));
+    help.setMnemonic(getMnemonic("HelpMenu.mnemonic"));
+    help.getAccessibleContext().setAccessibleDescription(getString("HelpMenu.access_desc"));
+
+    createMenuItem(help, "HelpMenu.a", new AboutAction(this));
+
+    return mb;
+  }
+
+  private JMenuItem createMenuItem(JMenu menu, String prefix, Action action) {
+    JMenuItem mi = (JMenuItem) menu.add(new JMenuItem(getString(prefix + "_label")));
+    mi.setMnemonic(getMnemonic(prefix + "_mnemonic"));
+    mi.getAccessibleContext().setAccessibleDescription(getString(prefix + "_access_desc"));
+
+    mi.addActionListener(action);
+    mi.setEnabled(action != null);
+
+    return mi;
+  }
+
+  public ImageIcon createImageIcon(String filename, String description) {
+    String path = "/resources/images/" + filename;
+    return new ImageIcon(getClass().getResource(path), description); 
+  }
+  
+  /***************************************************
+   *
    * Panels classes, etc
    *
    ***************************************************/
+
+  class PasswordPanel extends JPanel {
+    Steerer steerer;
+    JPasswordField pass;
+
+    public PasswordPanel(Steerer steerer, String prompt) {
+      this.steerer = steerer;
+
+      JPanel panel = new JPanel(new SpringLayout());
+      panel.add(new JLabel(prompt));
+      pass = (JPasswordField) panel.add(new JPasswordField());
+      SpringUtilities.makeCompactGrid(panel, 2, 1, 6, 6, 6, 6);
+
+      add(panel, BorderLayout.CENTER);
+    }
+
+    public String getPassword() {
+      return new String(pass.getPassword());
+    }
+  }
+
+  class SliderPanel extends JPanel {
+    Steerer steerer;
+    JSlider slider;
+
+    public SliderPanel(Steerer steerer, int current) {
+      JPanel panel = new JPanel(new SpringLayout());
+      panel.add(new JLabel("Steering interval:"));
+      slider = (JSlider) panel.add(new JSlider(1, 5, current));
+      slider.setMajorTickSpacing(1);
+      slider.setPaintTicks(true);
+      slider.setSnapToTicks(true);
+      slider.setLabelTable(buildLabels());
+      slider.setPaintLabels(true);
+      SpringUtilities.makeCompactGrid(panel, 2, 1, 6, 6, 6, 6);
+      add(panel, BorderLayout.CENTER);
+    }
+
+    public int getValue() {
+      return slider.getValue();
+    }
+
+    private Hashtable buildLabels() {
+      Hashtable<Integer, JLabel> h = new Hashtable<Integer, JLabel>(5);
+      h.put(new Integer(1), new JLabel("100"));
+      h.put(new Integer(2), new JLabel("250"));
+      h.put(new Integer(3), new JLabel("500"));
+      h.put(new Integer(4), new JLabel("1000"));
+      h.put(new Integer(5), new JLabel("2000"));
+      return h;
+    }
+  }
 
   class AboutPanel extends JPanel {
     Steerer steerer;
@@ -821,6 +938,25 @@ public class Steerer extends JPanel implements ReG_SteerConstants {
 
     public void actionPerformed(ActionEvent e) {
       steerer.tryAttach(null, remote);
+    }
+  }
+
+  class SteeringIntervalAction extends AbstractAction {
+    Steerer steerer;
+    
+    protected SteeringIntervalAction(Steerer steerer) {
+      super("SteeringIntervalAction");
+      this.steerer = steerer;
+    }
+
+    public void actionPerformed(ActionEvent e) {
+      SliderPanel panel = new SliderPanel(steerer, 3);
+      int ok = JOptionPane.showConfirmDialog(steerer, panel, "YO!!", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+
+      if(ok == JOptionPane.OK_OPTION) {
+	System.out.println(panel.getValue());
+	steerer.setTimerDelay(3000);
+      }
     }
   }
 }
