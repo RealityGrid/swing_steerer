@@ -254,7 +254,7 @@ public class Steerer extends JPanel implements ReG_SteerConstants {
     if(numPanels == 0) {
       remove(logo);
       add(tabs, BorderLayout.CENTER);
-      startTimer(500);
+      startTimer(200);
     }
 
     if(title == null) title = "Simulation " + numPanels;
