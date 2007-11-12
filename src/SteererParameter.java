@@ -183,7 +183,12 @@ class BoolParameter extends ReadWrite {
     }
 
     public void itemStateChanged(ItemEvent e) {
-      
+      if(e.getStateChange() == ItemEvent.SELECTED) {
+	param.steerValue("1");
+      }
+      else {
+	param.steerValue("0");
+      }
     }
   }
 }
